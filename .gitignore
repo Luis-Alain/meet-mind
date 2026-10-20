@@ -1,0 +1,134 @@
+# ==========================================
+# Environment variables and secrets
+# ==========================================
+.env
+.env.*
+!.env.example
+!.env.test.example
+
+*.pem
+*.key
+secrets/
+credentials/
+
+# ==========================================
+# Python
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+build/
+dist/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python tooling
+.python-version.local
+.mypy_cache/
+.pytype/
+.pyre/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+nosetests.xml
+test-results/
+
+# ==========================================
+# uv
+# ==========================================
+# Keep uv.lock committed for reproducible installs.
+# Do not ignore uv.lock.
+
+# ==========================================
+# Application data and databases
+# ==========================================
+*.db
+*.sqlite
+*.sqlite3
+instance/
+
+# Local application data
+data/
+storage/
+uploads/
+tmp/
+temp/
+
+# ==========================================
+# AI models, embeddings and vector stores
+# ==========================================
+models/
+checkpoints/
+artifacts/
+embeddings/
+vector_store/
+chroma/
+chroma_db/
+faiss_index/
+
+# ==========================================
+# Logs
+# ==========================================
+*.log
+logs/
+
+# ==========================================
+# Jupyter notebooks
+# ==========================================
+.ipynb_checkpoints/
+
+# ==========================================
+# macOS
+# ==========================================
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ==========================================
+# VS Code and IDEs
+# ==========================================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ==========================================
+# Test and evaluation outputs
+# ==========================================
+evals/results/
+evals/reports/
+reports/
+benchmark-results/
+
+# ==========================================
+# Build and runtime artifacts
+# ==========================================
+*.pid
+*.seed
+*.out
+.cache/
+.nox/
+.tox/
+
+
