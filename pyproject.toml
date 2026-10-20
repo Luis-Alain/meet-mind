@@ -1,7 +1,7 @@
 [project]
 name = "meet-mind"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI-powered meeting intelligence and action-item extraction."
 readme = "README.md"
 authors = [
     { name = "Luis Alain", email = "luisalain230904@gmail.com" }
@@ -9,12 +9,43 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "boto3>=1.43.115",
-    "python-dotenv>=1.2.4",
+    "fastapi>=0.150.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.16.0",
+    "python-dateutil>=2.9.0.post0",
+    "python-multipart>=0.0.32",
+    "sqlalchemy>=2.1.5",
+    "strands-agents>=1.61.1",
+    "uvicorn[standard]>=0.54.0",
 ]
 
 [project.scripts]
-meet-mind = "meet_mind:main"
+meet-mind = "meet_mind.main:run"
 
 [build-system]
 requires = ["uv_build>=0.13.1,<0.14.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.17.1",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests", "evals"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-m 'not bedrock and not decider'"
+markers = [
+    "bedrock: requires AWS credentials and a Bedrock model",
+    "decider: requires a running local Strands Decider server",
+]
