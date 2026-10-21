@@ -45,3 +45,46 @@ def test_srt_speaker_prefix_and_minutes():
 def test_max_chars_enforced():
     with pytest.raises(TranscriptTooLongError):
         parse_transcript("x" * 11, SourceFormat.TEXT, max_chars=10)
+
+
+MEET_EXPORT = """GOOGLE MEET TRANSCRIPT
+Meeting: Sprint Sync
+Date: October 21, 2026
+Participants: Carlos, Sofía
+
+[00:00:15] Carlos: Buenos días.
+[00:01:05] Sofía: Hola, Carlos.
+Seguimos con el segundo punto.
+[1:02:03] Carlos: Cerramos aquí.
+"""
+
+
+def test_meeting_export_header_is_skipped_and_timestamps_become_start_times():
+    segments = parse_txt(MEET_EXPORT)
+    assert [s.speaker for s in segments] == ["Carlos", "Sofía", "Carlos"]
+    assert [s.start for s in segments] == [15.0, 65.0, 3723.0]
+    assert segments[0].text == "Buenos días."
+    assert not any("Participants" in s.text or s.speaker == "Meeting" for s in segments)
+
+
+def test_untimestamped_line_continues_the_previous_utterance():
+    segments = parse_txt(MEET_EXPORT)
+    assert segments[1].text == "Hola, Carlos. Seguimos con el segundo punto."
+
+
+def test_parenthesised_timestamps_are_accepted():
+    segments = parse_txt("(00:00:05) Ana: hola\n(00:00:09) Luis: adiós")
+    assert [s.start for s in segments] == [5.0, 9.0]
+
+
+def test_plain_notes_keep_one_segment_per_line():
+    segments = parse_txt("Meeting: no es una cabecera aquí\nAna: hola")
+    assert [s.speaker for s in segments] == ["Meeting", "Ana"]
+    assert all(s.start is None for s in segments)
+
+
+def test_bundled_dataset_transcripts_parse_cleanly():
+    for name in ("standard_transcript.txt", "ambiguous_transcript.txt"):
+        segments = parse_txt((FIXTURES.parent / "datasets" / name).read_text())
+        assert segments and all(s.speaker and s.start is not None for s in segments), name
+        assert {s.speaker for s in segments} <= {"Carlos", "Sofía", "Luis", "María"}

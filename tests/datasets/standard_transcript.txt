@@ -1,0 +1,40 @@
+GOOGLE MEET TRANSCRIPT
+Meeting: Sprint Weekly Sync - E-commerce Project
+Date: October 21, 2026
+Participants: Carlos, Sofía, Luis, María
+
+[00:00:15] Carlos: Hello everyone, good morning. Let's get started with today's meeting. We have several critical pending items to close the payment module and the AI agent integration this week. Sofía, how are you doing with the payment gateway API endpoints?
+
+[00:00:32] Sofía: Hi, Carlos. I've finished the basic integration with Stripe, but I still need to configure the webhook handling for failed payments. There was a concurrency error pending that I found yesterday in the PostgreSQL database.
+
+[00:00:52] Carlos: Understood. Could you have that patch for the webhooks ready and document the schema in Notion before Thursday at noon? That way María can start connecting it to the interface.
+
+[00:01:08] Sofía: Yes, perfect. I'll handle the Stripe webhooks and update the Notion document this afternoon.
+
+[00:01:21] Carlos: Excellent. Luis, tell us about the artificial intelligence part. How is the RAG service for the product recommender going?
+
+[00:01:34] Luis: Hi, Carlos. The embeddings pipeline with Python and FastAPI is already running in the staging environment. However, I was reviewing the logs and the latency for the vector database queries is a bit high, averaging 800 milliseconds.
+
+[00:01:58] Carlos: Ah, that's quite high for production. What do you need to optimize it?
+
+[00:02:05] Luis: I need to tune the search indexes in Qdrant and check the concurrency in the Docker container. I'm going to run some load tests this afternoon. For tomorrow first thing in the morning, I need someone from the infrastructure team to help me check the memory limits on the AWS server, preferably before Friday's demo.
+
+[00:02:35] Carlos: Sure, I can help you with that myself tomorrow at 9:00 a.m., Luis. Schedule a brief call with me.
+
+[00:02:44] Luis: Super, scheduled.
+
+[00:02:48] Carlos: María, let's move to you. How is the frontend coming along with the cart and checkout views?
+
+[00:02:57] María: Hi! On my end, the design in Next.js and Tailwind CSS is almost ready. I've already integrated the visual components, but I need to connect the error alerts when Sofía's payment API returns a 400 or 500 code.
+
+[00:03:22] Carlos: Great. So, María, I need you to implement the error states and notification toasts in the checkout before Friday so it coincides with Luis's delivery.
+
+[00:03:37] María: Done. I'll get on that tomorrow right after reviewing the last pull request.
+
+[00:03:44] Carlos: Perfect. So a quick review of commitments: Sofía will configure the Stripe webhooks and update Notion before Thursday at noon; Luis will optimize the indexes in Qdrant and run load tests; Carlos will review the AWS memory limits with Luis tomorrow at 9:00 a.m.; and María will implement the error toasts in the checkout before Friday. Any other points before we close?
+
+[00:04:30] Sofía: All good for me.
+
+[00:04:32] Luis: All clear here.
+
+[00:04:34] Carlos: Done, thanks everyone. See you tomorrow.

@@ -1,0 +1,44 @@
+GOOGLE MEET TRANSCRIPT
+Meeting: Weekly Technical Review and System Architecture
+Date: October 21, 2026
+Participants: Carlos, Sofía, Luis, María
+
+[00:00:10] Carlos: Hi guys. Can you hear my mic well? I feel like my internet is cutting out a bit today.
+
+[00:00:18] Sofía: Yes, we can hear you well, Carlos, though with a bit of background echo.
+
+[00:00:25] Luis: I think it's María's that has feedback. María, can you mute yourself for a second? Ah, there, it's gone.
+
+[00:00:35] María: Done! Sorry, my neighbor's dog won't stop barking. Anyway, look, I was analyzing what we talked about last week regarding global state refactoring, and honestly Redux Toolkit is still a heavy option, but Zustand looks pretty clean. We should think about whether we migrate everything at some point, although I don't know if it's worth it right now.
+
+[00:01:05] Carlos: Mm, yeah, let's just keep that on the radar. No rush for now on that, focus on what's in the current sprint. Hey, speaking of something else, did you see the new patch Docker released? They say it broke several builds on Linux.
+
+[00:01:27] Sofía: Oof, yeah, it happened to me on my personal machine yesterday. I almost cried trying to spin up the PostgreSQL containers. Good thing we use a more stable version on the test server.
+
+[00:01:42] Luis: We should be careful with automatic updates on the GitHub Actions runners, just in case. Someone should check the base versions in the app's main Dockerfile, just to have peace of mind and avoid weird surprises next week.
+
+[00:02:08] Carlos: Yeah, totally. If you have some free time this afternoon, Luis, take a quick look at the Dockerfile, but don't obsess over it, because the priority is the RAG.
+
+[00:02:22] Luis: Alright, I'll give it a quick check after lunch, if I have time.
+
+[00:02:30] María: Hey, changing the subject, does anyone know if the new coffee shop on the corner is open on Saturdays? I wanted to go try the specialty coffee they recommended in the Slack group.
+
+[00:02:45] Sofía: Haha, I have no idea, but I think they close on weekends. We should organize a team lunch before the month ends.
+
+[00:02:55] Carlos: Noted on the social to-do list (laughs). But anyway, getting back to the code. Sofía, how did the JWT authentication module turn out? Is that merged into development yet?
+
+[00:03:15] Sofía: The PR is open, but a couple of pytest unit tests failed because I changed the structure of the environment variables in the .env.example. Please, if someone could review pull request #142 and leave me their approval before 4 p.m. so it doesn't get stuck with tomorrow's deploy, I would really appreciate it.
+
+[00:03:48] Carlos: Perfect, I'll review it right after this call, Sofía.
+
+[00:03:54] Luis: I'll also give it a read if you want, to check the tokens part.
+
+[00:03:59] Sofía: Great, thanks to both of you!
+
+[00:04:04] Carlos: Excellent. Well, if there are no more existential doubts about Docker or coffee, I think we can cut it here and keep writing code. See you tomorrow at the daily standup.
+
+[00:04:22] María: Bye!
+
+[00:04:24] Sofía: Bye, have a good day.
+
+[00:04:26] Luis: See you.

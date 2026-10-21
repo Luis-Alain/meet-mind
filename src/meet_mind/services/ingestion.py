@@ -19,6 +19,9 @@ _TIMECODE = re.compile(
 _VTT_VOICE = re.compile(r"^<v\s+([^>]+)>(.*)$", re.DOTALL)
 # Any other inline markup (italics, colours, timestamps) that must not reach the model.
 _TAG = re.compile(r"</?[^>]+>")
+# A timestamp at the start of a line, as written by meeting-tool exports: ``[00:00:15]`` or
+# ``(00:00:15)``, with or without the hours.
+_LINE_TIMESTAMP = re.compile(r"^[\[(]((?:\d{1,2}:)?\d{1,2}:\d{2})[\])]\s*")
 # ``Name: text`` at the start of a line. The name must start with a letter and stay short, so a
 # sentence that merely contains a colon is not mistaken for a speaker label.
 _SPEAKER_LINE = re.compile(r"^([^\W\d_][\w .'-]{0,40}?):\s+(\S.*)$")
@@ -53,17 +56,35 @@ def _normalize(content: str) -> str:
     return content.lstrip("﻿").replace("\r\n", "\n").replace("\r", "\n")
 
 
-# processes .txt transcripts, where each line represents a segment of conversation.
+# Processes .txt transcripts. Two layouts are supported:
+# * plain notes, where every non-empty line is one segment (``Ana: text`` or just text);
+# * exports from meeting tools, where every utterance starts with a timestamp
+#   (``[00:00:15] Ana: text``). Such files usually open with a header block (title, date,
+#   participants) and may wrap one utterance over several lines, so the lines before the first
+#   timestamp are skipped and lines without a timestamp continue the previous utterance.
 def parse_txt(content: str) -> list[TranscriptSegment]:
+    lines = [line.strip() for line in _normalize(content).split("\n") if line.strip()]
+    has_timestamps = any(_LINE_TIMESTAMP.match(line) for line in lines)
+
     segments: list[TranscriptSegment] = []
-    for line in _normalize(content).split("\n"):
-        line = line.strip()
-        if not line:
+    started = not has_timestamps
+    for line in lines:
+        start = None
+        stamp = _LINE_TIMESTAMP.match(line)
+        if stamp:
+            started = True
+            start = _seconds(stamp.group(1))
+            line = line[stamp.end() :]
+        elif not started:
             continue
+        elif has_timestamps and segments:
+            segments[-1].text += " " + line
+            continue
+
         match = _SPEAKER_LINE.match(line)
         speaker, text = (match.group(1).strip(), match.group(2).strip()) if match else (None, line)
         segment_id = _segment_id(len(segments) + 1)
-        segments.append(TranscriptSegment(id=segment_id, text=text, speaker=speaker))
+        segments.append(TranscriptSegment(id=segment_id, text=text, speaker=speaker, start=start))
     return segments
 
 
