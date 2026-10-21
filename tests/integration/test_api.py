@@ -1,3 +1,4 @@
+import csv
 import io
 from datetime import date
 from types import SimpleNamespace
@@ -318,3 +319,56 @@ def test_data_survives_an_application_restart(tmp_path):
     with _client(tmp_path) as second:
         tasks = second.get(f"/api/v1/meetings/{meeting_id}/tasks").json()
         assert tasks[0]["title"] == "Título editado"
+
+
+# --- export ---------------------------------------------------------------------------------
+
+
+def _processed(client) -> str:
+    meeting_id = _create(client)
+    client.post(f"/api/v1/meetings/{meeting_id}/process")
+    return meeting_id
+
+
+def test_export_json_reflects_edits(client):
+    meeting_id = _processed(client)
+    task_id = client.get(f"/api/v1/meetings/{meeting_id}/tasks").json()[0]["id"]
+    client.patch(f"/api/v1/tasks/{task_id}", json={"title": "Título editado"})
+
+    response = client.get(f"/api/v1/meetings/{meeting_id}/export?format=json")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert f"meeting-{meeting_id}.json" in response.headers["content-disposition"]
+    body = response.json()
+    assert body["meeting"]["id"] == meeting_id
+    assert body["tasks"][0]["title"] == "Título editado"
+    assert body["decisions"][0]["text"] == "Cerrar autenticación"
+
+
+def test_export_defaults_to_json(client):
+    meeting_id = _processed(client)
+    assert client.get(f"/api/v1/meetings/{meeting_id}/export").json()["tasks"]
+
+
+def test_export_csv_reflects_edits_and_parses(client):
+    meeting_id = _processed(client)
+    task_id = client.get(f"/api/v1/meetings/{meeting_id}/tasks").json()[0]["id"]
+    client.patch(f"/api/v1/tasks/{task_id}", json={"assignee": "Ana", "priority": "high"})
+
+    response = client.get(f"/api/v1/meetings/{meeting_id}/export?format=csv")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/csv; charset=utf-8"
+    rows = list(csv.DictReader(io.StringIO(response.text)))
+    assert len(rows) == 2
+    edited = next(row for row in rows if row["task_id"] == task_id)
+    assert edited["assignee"] == "Ana" and edited["priority"] == "high"
+    assert edited["review_status"] == "edited"
+
+
+def test_export_errors(client):
+    unprocessed = _create(client)
+    assert client.get(f"/api/v1/meetings/{unprocessed}/export").status_code == 409
+    processed = _processed(client)
+    assert client.get(f"/api/v1/meetings/{processed}/export?format=xml").status_code == 422
+    missing = "00000000-0000-0000-0000-000000000000"
+    assert client.get(f"/api/v1/meetings/{missing}/export").status_code == 404

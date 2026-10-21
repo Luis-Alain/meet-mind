@@ -6,8 +6,6 @@ MeetMind is an AI-powered application designed to transform meeting transcripts 
 
 The project is being developed in Python, using Amazon Bedrock for generative AI capabilities and exploring Strands Agents and local decision models for structured task classification.
 
-> **Project status:** Early development.
-
 ## Features
 
 - Meeting transcript ingestion.
@@ -19,6 +17,74 @@ The project is being developed in Python, using Amazon Bedrock for generative AI
 - Task persistence using SQLite.
 - Export to JSON and CSV.
 - Integrations with project management platforms such as Asana, Trello, and Jira.
+
+## How It Works
+
+MeetMind runs two kinds of "agents" with deliberately different powers:
+
+- **The extraction agent** (Strands Agents + Amazon Bedrock) reads the transcript and writes
+  structured results. It has **no tools**: it cannot call APIs, read files or run code.
+- **Decider** (a small local classifier, Strands Decider 2B) never writes text. It answers
+  yes/no and pick-one questions about each extracted task. It is called from plain Python code,
+  never by the LLM, so its contribution can be measured on its own.
+
+Everything between and after them is deterministic code, so a language model's guess is never
+the last word.
+
+```mermaid
+flowchart TD
+    A([Client]) -->|"POST /meetings<br/>or /meetings/upload"| B["Ingestion<br/>parse TXT, VTT, SRT<br/>into segments s0001, s0002, ..."]
+    B --> C[("SQLite<br/>meeting + segments")]
+    A -->|"POST /meetings/id/process"| D{"Claim meeting<br/>(one run at a time)"}
+    C --> D
+    D -->|"already running or done<br/>(without force)"| X(["409 Conflict"])
+    D -->|claimed| E["Split transcript<br/>into overlapping chunks"]
+
+    subgraph LLM ["Extraction agent (Amazon Bedrock, no tools)"]
+        E --> F["Fresh agent per chunk<br/>transcript is untrusted data"]
+        F --> G{"Output matches<br/>the schema?"}
+        G -->|"no, retry once"| F
+        G -->|yes| H["Drop items that cite<br/>segments that do not exist"]
+    end
+
+    H --> I["Merge chunks<br/>remove duplicates, keep all evidence"]
+
+    subgraph RULES ["Deterministic validation (no model)"]
+        I --> J["Quote must appear in the cited segments"]
+        J --> K["Assignee must be named in the quote<br/>or be the speaker"]
+        K --> L["Date status comes from the spoken phrase<br/>weekday and meeting date are cross-checked"]
+    end
+
+    L --> M{"Decider<br/>enabled?"}
+
+    subgraph DEC ["Decider (local, second opinion per task)"]
+        M -->|yes| N["Is it a task?<br/>Explicit commitment?<br/>Evidence sufficient?"]
+        N --> O{"Confident<br/>answer?"}
+        O -->|"no or server down"| P["Abstain<br/>(server down: task left untouched)"]
+    end
+
+    M -->|no| Q
+    O -->|yes| Q["Flag for human review<br/>only when the signal is clearly negative"]
+    P --> Q
+    Q --> R[("SQLite<br/>tasks, items, run history,<br/>Decider calls")]
+    R --> S["Person reviews and edits<br/>PATCH /tasks/id"]
+    S --> T(["Export JSON or CSV"])
+    R --> T
+```
+
+**Reading the diagram**
+
+- **Evidence travels with every item.** Each task and decision keeps a literal quote and the ids
+  of the transcript segments it came from. Validation checks that the quote is really there;
+  an item that cannot be traced back is flagged (tasks) or removed (decisions, risks, ...).
+- **Unknown stays unknown.** An assignee or date the transcript does not support is cleared and
+  marked `unknown` instead of being guessed.
+- **Rules and Decider only flag or remove, never rewrite.** Doubtful tasks stay visible with
+  `needs_review` and the reasons, so a person makes the final call.
+- **Failures degrade gracefully.** If Decider is unreachable the pipeline continues without it;
+  if the LLM fails, the meeting is marked `failed` and can be processed again.
+- **Every run is recorded** (model, tokens, latency, validation counters and each Decider
+  answer), which makes it possible to compare runs with and without Decider.
 
 ## Tech Stack
 
@@ -106,6 +172,36 @@ uv run src/meet_mind/main.py
 
 This currently runs the initial Bedrock Converse API example. As the project evolves, a package entry point or development server command may replace this command.
 
+## Exporting tasks
+
+`GET /api/v1/meetings/{meeting_id}/export?format=json|csv` downloads the current result of a
+processed meeting, including any edits made through `PATCH /api/v1/tasks/{task_id}`. The default
+format is JSON; any other value returns `422`, and a meeting that has not been processed returns `409`.
+
+The JSON file contains the meeting metadata plus `summary`, `tasks`, `decisions`, `risks`,
+`insights` and `open_questions`, each with its evidence.
+
+The CSV has one row per task, UTF-8 encoded, comma separated, with a header row:
+
+| Column | Content |
+|---|---|
+| `task_id` | Task identifier, stable across edits |
+| `title`, `description` | Task text |
+| `assignee`, `assignee_status` | Person and whether it is `explicit`, `inferred` or `unknown` |
+| `due_date`, `due_date_status` | ISO date (`YYYY-MM-DD`) and its status |
+| `priority` | `low`, `medium`, `high` or `unknown` |
+| `review_status` | `pending`, `approved`, `edited` or `rejected` |
+| `needs_review` | `true` or `false` |
+| `evidence_quotes` | Literal transcript quotes, separated by ` \| ` |
+| `evidence_timestamps` | `HH:MM:SS` start time of each quote, in the same order (empty if unknown) |
+
+Unknown values are empty cells. Text that starts with `=`, `+`, `-` or `@` is prefixed with an
+apostrophe so spreadsheets show it as text instead of running it as a formula; the original text
+follows the apostrophe.
+
+The format is neutral and not tied to any tool. Importing into Asana, Trello or Jira requires a
+mapping of these columns to each tool's fields, which is not included yet.
+
 ## Configuration
 
 | Variable | Description |
@@ -137,10 +233,3 @@ Model evaluation should also measure extraction accuracy, priority classificatio
 - **Evaluated model selection:** Generative and decision models should be selected based on measurable quality, cost, latency, and deployment requirements.
 - **Modular architecture:** Model providers, task extraction, validation, persistence, and integrations should remain independently testable.
 
-## Contributing
-
-This project is under active development. Contributions should follow the existing project structure, include tests where appropriate, and keep credentials and sensitive meeting data out of version control.
-
-## License
-
-No license has been specified yet. Until a license is added to the repository, reuse and redistribution are subject to applicable copyright law.

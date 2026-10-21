@@ -8,10 +8,11 @@ is read from ``app.state`` so tests can replace them without touching the networ
 import logging
 from datetime import date
 from pathlib import PurePath
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
 from meet_mind.agent.factory import ModelNotConfiguredError
@@ -28,6 +29,7 @@ from meet_mind.config import Settings
 from meet_mind.models.common import MeetingStatus, SourceFormat
 from meet_mind.models.meeting import Meeting
 from meet_mind.repositories.meetings import MeetingRepository
+from meet_mind.services.export import export_csv, export_json
 from meet_mind.services.ingestion import (
     TranscriptTooLongError,
     UnsupportedFormatError,
@@ -298,3 +300,34 @@ def patch_task(
     if task is None:
         raise _not_found("task")
     return TaskOut.model_validate(task.model_dump())
+
+
+# --- export -----------------------------------------------------------------------------------
+
+
+@router.get("/api/v1/meetings/{meeting_id}/export")
+def export_meeting(
+    meeting_id: UUID,
+    format: Literal["json", "csv"] = "json",
+    repo: MeetingRepository = Depends(get_repo),
+) -> Response:
+    """Download the current result (including edits) as JSON or CSV.
+
+    Nothing is recomputed: the file is built from what is stored, so it always matches what
+    ``GET /meetings/{id}`` and ``/tasks`` show. Any other ``format`` value is a 422.
+    """
+    meeting = _load_meeting(repo, meeting_id)
+    results = repo.get_results(meeting_id)
+    if results is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "the meeting has not been processed yet")
+
+    if format == "csv":
+        body, media_type = export_csv(results.tasks), "text/csv; charset=utf-8"
+    else:
+        payload = export_json(meeting, results)
+        body, media_type = JSONResponse(payload).body, "application/json"
+    return Response(
+        content=body,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="meeting-{meeting_id}.{format}"'},
+    )
