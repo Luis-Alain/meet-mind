@@ -72,7 +72,6 @@ temp/
 # ==========================================
 # AI models, embeddings and vector stores
 # ==========================================
-models/
 checkpoints/
 artifacts/
 embeddings/

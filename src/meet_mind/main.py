@@ -1,6 +1,5 @@
 def run() -> None:
-    # Replaced by the FastAPI app launcher in Phase 5.
-    print("MeetMind backend: API not implemented yet.")
+    print("Hello World")
 
 
 if __name__ == "__main__":

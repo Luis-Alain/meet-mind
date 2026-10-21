@@ -1,0 +1,4 @@
+Ana: Necesitamos cerrar la integración de autenticación esta semana.
+Luis: Yo me encargo, la tengo lista el viernes.
+Ana: Perfecto. También decidimos usar Cognito para el login.
+Luis: Un riesgo es que el proveedor de correo aún no está configurado.
