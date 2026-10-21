@@ -7,6 +7,8 @@ from meet_mind.models.common import FieldStatus, Priority, Provenance, ReviewSta
 
 
 class Evidence(BaseModel):
+    """The part of the transcript that justifies an extracted item."""
+
     quote: str = Field(min_length=1, description="Literal text taken from the transcript")
     segment_ids: list[str] = Field(min_length=1)
     speaker: str | None = None
@@ -14,6 +16,13 @@ class Evidence(BaseModel):
 
 
 class Task(BaseModel):
+    """An action item. Unknown information is represented explicitly, never guessed.
+
+    ``assignee`` and ``due_date`` stay empty with status ``unknown`` unless the transcript
+    supports them; ``explicit`` means stated outright, ``inferred`` means derived from context
+    (for example a relative date such as "on Friday").
+    """
+
     title: str = Field(min_length=1)
     description: str | None = None
     assignee: str | None = None
@@ -30,6 +39,8 @@ class Task(BaseModel):
 
     @model_validator(mode="after")
     def _unknown_means_empty(self) -> Self:
+        # A value must exist exactly when its status says it is known; this keeps "unknown"
+        # from being confused with an empty or placeholder value.
         if (self.assignee is None) != (self.assignee_status == FieldStatus.UNKNOWN):
             raise ValueError("assignee must be null exactly when assignee_status is 'unknown'")
         if (self.due_date is None) != (self.due_date_status == FieldStatus.UNKNOWN):

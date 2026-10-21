@@ -1,6 +1,7 @@
 from enum import StrEnum
 
 
+# State of the human review of an extracted item.
 class ReviewStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
@@ -8,6 +9,7 @@ class ReviewStatus(StrEnum):
     REJECTED = "rejected"
 
 
+# Who or what produced a value, so reviewers know how much to trust it.
 class Provenance(StrEnum):
     LLM = "llm"
     DECIDER = "decider"
@@ -15,6 +17,7 @@ class Provenance(StrEnum):
     USER = "user"
 
 
+# How well a field is backed by the transcript: stated, derived from context, or missing.
 class FieldStatus(StrEnum):
     EXPLICIT = "explicit"
     INFERRED = "inferred"

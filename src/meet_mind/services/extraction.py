@@ -1,3 +1,11 @@
+"""LLM-based extraction of tasks, decisions, risks, insights and open questions.
+
+The transcript is split into chunks small enough for one model call, each chunk is sent to a
+fresh agent that must answer with the ``ExtractionResult`` schema, and the per-chunk answers
+are merged back into a single result. Every extracted item must cite the transcript segments
+it came from; items whose citations do not exist are discarded rather than trusted.
+"""
+
 import logging
 import re
 import time
@@ -18,6 +26,8 @@ AgentFactory = Callable[[], Any]
 
 @dataclass
 class ExtractionMetrics:
+    """Cost and quality counters collected while extracting, kept for logging and evaluation."""
+
     chunks: int = 0
     attempts: int = 0
     input_tokens: int = 0
@@ -41,6 +51,12 @@ def _fmt_time(seconds: float | None) -> str:
 
 
 def format_segment(segment: TranscriptSegment) -> str:
+    """Render one segment as ``[s0003] Speaker @00:01:05: text`` for the prompt.
+
+    The leading id is how the model learns which segment ids it may cite as evidence. Any
+    closing ``</transcript>`` in the text is removed so a transcript cannot break out of the
+    delimiters that mark it as untrusted data.
+    """
     speaker = segment.speaker or "?"
     text = segment.text.replace("</transcript>", "")
     return f"[{segment.id}] {speaker}{_fmt_time(segment.start)}: {text}"
@@ -49,7 +65,12 @@ def format_segment(segment: TranscriptSegment) -> str:
 def chunk_segments(
     segments: list[TranscriptSegment], max_chars: int = 12_000, overlap: int = 2
 ) -> list[list[TranscriptSegment]]:
-    """Split segments into chunks of at most max_chars, repeating `overlap` segments."""
+    """Split segments into chunks of at most ``max_chars`` characters.
+
+    Consecutive chunks share their last ``overlap`` segments so that a commitment spoken
+    across a chunk boundary is still seen whole by at least one call. Duplicates created by
+    the overlap are removed later in ``consolidate``.
+    """
     chunks: list[list[TranscriptSegment]] = []
     current: list[TranscriptSegment] = []
     size = 0
@@ -67,13 +88,18 @@ def chunk_segments(
 
 
 def _normalize(text: str) -> str:
+    """Lower-case and drop punctuation so near-identical titles compare as equal."""
     return re.sub(r"\W+", " ", text.casefold()).strip()
 
 
 def _enrich_evidence(
     evidence: list[Evidence], by_id: dict[str, TranscriptSegment]
 ) -> list[Evidence]:
-    """Keep only evidence pointing at real segments and fill speaker/start from them."""
+    """Keep only evidence that points at real segments and fill in speaker and start time.
+
+    The model only has to provide the quote and segment ids; who spoke and when is copied
+    from the first cited segment so those values can never be hallucinated.
+    """
     kept: list[Evidence] = []
     for item in evidence:
         ids = [sid for sid in item.segment_ids if sid in by_id]
@@ -95,7 +121,11 @@ def _enrich_evidence(
 def _sanitize(
     result: ExtractionResult, by_id: dict[str, TranscriptSegment], metrics: ExtractionMetrics
 ) -> ExtractionResult:
-    """Drop items whose evidence does not point at the transcript."""
+    """Remove items that cannot be traced back to the transcript.
+
+    An item with no valid citation has no evidence a reviewer could check, so it is dropped
+    and counted in ``metrics.dropped_items`` instead of being passed on.
+    """
     updates: dict[str, Any] = {}
     for name in ("tasks", "decisions", "risks", "insights", "open_questions"):
         kept = []
@@ -115,7 +145,12 @@ def _merge_evidence(a: list[Evidence], b: list[Evidence]) -> list[Evidence]:
 
 
 def consolidate(results: list[ExtractionResult]) -> ExtractionResult:
-    """Merge per-chunk results, deduplicating by normalized title/text."""
+    """Merge the per-chunk results into one.
+
+    Items that repeat across chunks (typically because of the overlap) are recognised by their
+    normalized title or text; the first occurrence is kept and the evidence of the others is
+    added to it, so no citation is lost.
+    """
     merged = ExtractionResult(summary=" ".join(r.summary for r in results if r.summary).strip())
     for name, key in (
         ("tasks", "title"),
@@ -172,6 +207,8 @@ def extract_meeting(
     max_attempts: int = 2,
 ) -> ExtractionOutcome:
     """Run LLM extraction over the meeting transcript, chunking long inputs."""
+    # Retry only when the model returns output that does not fit the schema. A chunk that keeps
+    # failing is skipped, and the whole run fails only if every chunk failed.
     metrics = ExtractionMetrics()
     by_id = {s.id: s for s in meeting.segments}
     chunks = chunk_segments(meeting.segments, max_chunk_chars, overlap)
@@ -180,6 +217,8 @@ def extract_meeting(
 
     for number, chunk in enumerate(chunks, start=1):
         prompt = _chunk_prompt(meeting, chunk, (number, len(chunks)))
+        # A new agent per attempt keeps chunks independent: no conversation history leaks
+        # from one part of the transcript into the next.
         for attempt in range(1, max_attempts + 1):
             metrics.attempts += 1
             started = time.perf_counter()
