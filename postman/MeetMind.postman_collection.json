@@ -1,0 +1,1183 @@
+{
+  "info": {
+    "_postman_id": "5faec1d4-a9f8-4cd8-8b22-095f8b3e5a2d",
+    "name": "MeetMind",
+    "description": "End-to-end checks for the MeetMind API. Run the folders in order: 'Main flow' creates a meeting and stores meeting_id / task_id in the environment, and 'Error cases' reuses them.\n\nThe extraction is performed by a language model, so the tests check structure and invariants, never exact generated text.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "The process is up. Never fails because of a dependency."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Backend reports ok\", () => pm.expect(pm.response.json().status).to.eql(\"ok\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/ready",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "ready"
+              ]
+            },
+            "description": "Database and Bedrock model id are required. A Decider outage only reports 'degraded'."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200 (503 means a required dependency is missing)\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Overall status is ok or degraded\", () => pm.expect([\"ok\", \"degraded\"]).to.include(body.status));",
+                  "pm.test(\"Required dependencies are ready\", () => {",
+                  "  pm.expect(body.checks.database).to.eql(\"ok\");",
+                  "  pm.expect(body.checks.bedrock_model).to.eql(\"ok\");",
+                  "});",
+                  "pm.test(\"Decider state is reported\", () => pm.expect([\"ok\", \"unavailable\", \"disabled\"]).to.include(body.checks.decider));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Main flow",
+      "item": [
+        {
+          "name": "1. Create meeting",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Weekly sync (Postman)\",\n  \"meeting_date\": \"2026-10-19\",\n  \"participants\": [\n    \"Ana\",\n    \"Luis\"\n  ],\n  \"transcript\": \"Ana: Necesitamos cerrar la integración de autenticación esta semana.\\nLuis: Yo me encargo, la tengo lista el viernes.\\nAna: Perfecto. También decidimos usar Cognito para el login.\\nLuis: Un riesgo es que el proveedor de correo aún no está configurado.\",\n  \"source_format\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Returns an id, status and segment count\", () => {",
+                  "  pm.expect(body.meeting_id).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(body.status).to.eql(\"created\");",
+                  "  pm.expect(body.segments_count).to.eql(4);",
+                  "});",
+                  "pm.environment.set(\"meeting_id\", body.meeting_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Process meeting",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings/{{meeting_id}}/process",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings",
+                "{{meeting_id}}",
+                "process"
+              ]
+            },
+            "description": "Calls Amazon Bedrock (and Decider if enabled); can take several seconds."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "// The model output varies between runs, so only the structure and invariants are checked.",
+                  "pm.test(\"Meeting is completed\", () => pm.expect(body.status).to.eql(\"completed\"));",
+                  "pm.test(\"Response has the documented fields\", () => {",
+                  "  pm.expect(body.meeting_id).to.eql(pm.environment.get(\"meeting_id\"));",
+                  "  pm.expect(body.summary).to.be.a(\"string\");",
+                  "  pm.expect(body.tasks_count).to.be.a(\"number\").and.at.least(0);",
+                  "  pm.expect(body.decider_enabled).to.be.a(\"boolean\");",
+                  "  pm.expect(body.review_required_count).to.be.a(\"number\").and.at.most(body.tasks_count);",
+                  "});",
+                  "pm.test(\"At least one task was extracted from a transcript with a clear commitment\", () => pm.expect(body.tasks_count).to.be.at.least(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Get meeting with results",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings/{{meeting_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings",
+                "{{meeting_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Metadata matches what was created\", () => {",
+                  "  pm.expect(body.title).to.eql(\"Weekly sync (Postman)\");",
+                  "  pm.expect(body.participants).to.eql([\"Ana\", \"Luis\"]);",
+                  "  pm.expect(body.status).to.eql(\"completed\");",
+                  "});",
+                  "pm.test(\"Results contain every section\", () => {",
+                  "  pm.expect(body.results).to.be.an(\"object\");",
+                  "  [\"summary\", \"tasks\", \"decisions\", \"risks\", \"insights\", \"open_questions\"].forEach(k => pm.expect(body.results).to.have.property(k));",
+                  "});",
+                  "pm.test(\"Every task has traceable evidence\", () => {",
+                  "  pm.expect(body.results.tasks).to.be.an(\"array\");",
+                  "  body.results.tasks.forEach(t => {",
+                  "    pm.expect(t.evidence).to.be.an(\"array\").and.not.empty;",
+                  "    t.evidence.forEach(e => {",
+                  "      pm.expect(e.quote).to.be.a(\"string\").and.not.empty;",
+                  "      pm.expect(e.segment_ids).to.be.an(\"array\").and.not.empty;",
+                  "    });",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. List tasks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings/{{meeting_id}}/tasks",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings",
+                "{{meeting_id}}",
+                "tasks"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const tasks = pm.response.json();",
+                  "pm.test(\"Tasks are listed with ids and required fields\", () => {",
+                  "  pm.expect(tasks).to.be.an(\"array\").and.not.empty;",
+                  "  tasks.forEach(t => {",
+                  "    pm.expect(t.id).to.be.a(\"string\").and.not.empty;",
+                  "    pm.expect(t.title).to.be.a(\"string\").and.not.empty;",
+                  "    pm.expect([\"explicit\", \"inferred\", \"unknown\"]).to.include(t.assignee_status);",
+                  "    pm.expect([\"explicit\", \"inferred\", \"unknown\"]).to.include(t.due_date_status);",
+                  "    pm.expect([\"low\", \"medium\", \"high\", \"unknown\"]).to.include(t.priority);",
+                  "    pm.expect(t.needs_review).to.be.a(\"boolean\");",
+                  "  });",
+                  "});",
+                  "pm.test(\"A missing assignee or date is null, never invented\", () => tasks.forEach(t => {",
+                  "  if (t.assignee_status === \"unknown\") pm.expect(t.assignee).to.eql(null);",
+                  "  if (t.due_date_status === \"unknown\") pm.expect(t.due_date).to.eql(null);",
+                  "}));",
+                  "pm.environment.set(\"task_id\", tasks[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Edit a task",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/tasks/{{task_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tasks",
+                "{{task_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Titulo editado desde Postman\",\n  \"assignee\": \"Ana\",\n  \"priority\": \"high\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const task = pm.response.json();",
+                  "pm.test(\"Edited fields changed\", () => {",
+                  "  pm.expect(task.title).to.eql(\"Titulo editado desde Postman\");",
+                  "  pm.expect(task.assignee).to.eql(\"Ana\");",
+                  "  pm.expect(task.priority).to.eql(\"high\");",
+                  "});",
+                  "pm.test(\"Values entered by a person are explicit and attributed to the user\", () => {",
+                  "  pm.expect(task.assignee_status).to.eql(\"explicit\");",
+                  "  pm.expect(task.review_status).to.eql(\"edited\");",
+                  "  pm.expect(task.provenance).to.eql(\"user\");",
+                  "});",
+                  "pm.test(\"Evidence is preserved\", () => pm.expect(task.evidence).to.be.an(\"array\").and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Edit is persisted",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings/{{meeting_id}}/tasks",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings",
+                "{{meeting_id}}",
+                "tasks"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"The edited task comes back with its changes\", () => {",
+                  "  const task = pm.response.json().find(t => t.id === pm.environment.get(\"task_id\"));",
+                  "  pm.expect(task, \"edited task is still listed\").to.exist;",
+                  "  pm.expect(task.title).to.eql(\"Titulo editado desde Postman\");",
+                  "  pm.expect(task.assignee).to.eql(\"Ana\");",
+                  "  pm.expect(task.review_status).to.eql(\"edited\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Export JSON",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings/{{meeting_id}}/export?format=json",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings",
+                "{{meeting_id}}",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "json"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Served as a JSON download\", () => {",
+                  "  pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/json\");",
+                  "  pm.expect(pm.response.headers.get(\"Content-Disposition\")).to.include(\"attachment\");",
+                  "});",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Contains the meeting and every section\", () => {",
+                  "  pm.expect(body.meeting.id).to.eql(pm.environment.get(\"meeting_id\"));",
+                  "  [\"summary\", \"tasks\", \"decisions\", \"risks\", \"insights\", \"open_questions\"].forEach(k => pm.expect(body).to.have.property(k));",
+                  "});",
+                  "pm.test(\"The export reflects the edit\", () => {",
+                  "  const task = body.tasks.find(t => t.id === pm.environment.get(\"task_id\"));",
+                  "  pm.expect(task.title).to.eql(\"Titulo editado desde Postman\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. Export CSV",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings/{{meeting_id}}/export?format=csv",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings",
+                "{{meeting_id}}",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "csv"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Served as a CSV download\", () => {",
+                  "  pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"text/csv\");",
+                  "  pm.expect(pm.response.headers.get(\"Content-Disposition\")).to.include(\".csv\");",
+                  "});",
+                  "const lines = pm.response.text().split(/\\r?\\n/).filter(l => l.length);",
+                  "pm.test(\"Header has the documented columns\", () => pm.expect(lines[0]).to.eql(",
+                  "  \"task_id,title,description,assignee,assignee_status,due_date,due_date_status,priority,review_status,needs_review,evidence_quotes,evidence_timestamps\"));",
+                  "pm.test(\"There is a row per task and it reflects the edit\", () => {",
+                  "  pm.expect(lines.length).to.be.at.least(2);",
+                  "  const row = lines.find(l => l.startsWith(pm.environment.get(\"task_id\")));",
+                  "  pm.expect(row, \"edited task row\").to.exist;",
+                  "  pm.expect(row).to.include(\"Titulo editado desde Postman\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Error cases",
+      "item": [
+        {
+          "name": "Create: empty transcript",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Vacia\",\n  \"transcript\": \"   \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create: missing title",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transcript\": \"Ana: hola\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create: unsupported source format",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Formato\",\n  \"transcript\": \"Ana: hola\",\n  \"source_format\": \"docx\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create: unreadable body",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{ not json",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get: unknown meeting",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get: malformed id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings/not-a-uuid",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings",
+                "not-a-uuid"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Process: unknown meeting",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings/00000000-0000-0000-0000-000000000000/process",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings",
+                "00000000-0000-0000-0000-000000000000",
+                "process"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Process: already processed needs force",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings/{{meeting_id}}/process",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings",
+                "{{meeting_id}}",
+                "process"
+              ]
+            },
+            "description": "Reprocessing costs tokens, so it is refused unless force=true."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));",
+                  "pm.test(\"Tells the caller how to proceed\", () => pm.expect(pm.response.json().detail).to.include(\"force=true\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tasks: unknown meeting",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings/00000000-0000-0000-0000-000000000000/tasks",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings",
+                "00000000-0000-0000-0000-000000000000",
+                "tasks"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Task edit: unknown task",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/tasks/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tasks",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"x\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Task edit: empty body",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/tasks/{{task_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tasks",
+                "{{task_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Task edit: blank title",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/tasks/{{task_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tasks",
+                "{{task_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Task edit: invalid priority",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/tasks/{{task_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tasks",
+                "{{task_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"priority\": \"urgent\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Task edit: evidence is read-only",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/tasks/{{task_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tasks",
+                "{{task_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"evidence\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: create an unprocessed meeting",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings"
+              ]
+            },
+            "description": "Not a test case: creates the meeting used by the next request.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Sin procesar\",\n  \"transcript\": \"Ana: Esta reunion todavia no se procesa.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.environment.set(\"unprocessed_meeting_id\", pm.response.json().meeting_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Export: meeting not processed yet",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings/{{unprocessed_meeting_id}}/export",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings",
+                "{{unprocessed_meeting_id}}",
+                "export"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Export: unsupported format",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings/{{meeting_id}}/export?format=xml",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings",
+                "{{meeting_id}}",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "xml"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Export: unknown meeting",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/meetings/00000000-0000-0000-0000-000000000000/export",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "meetings",
+                "00000000-0000-0000-0000-000000000000",
+                "export"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Error body explains the problem\", () => pm.expect(pm.response.json()).to.have.property(\"detail\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -224,6 +224,30 @@ As tests are added, the project should cover data validation, task extraction, d
 
 Model evaluation should also measure extraction accuracy, priority classification quality, unsupported claims, and latency.
 
+### API tests with Postman
+
+`postman/MeetMind.postman_collection.json` exercises the running API end to end, and
+`postman/local.postman_environment.json` points it at `http://localhost:8000`. It has three folders:
+
+- **Health:** liveness and readiness.
+- **Main flow:** create a meeting, process it, read the results and tasks, edit a task, check the
+  edit was persisted, and export JSON and CSV. `meeting_id` and `task_id` are stored in the
+  environment while it runs.
+- **Error cases:** empty or malformed input, unknown ids, reprocessing without `force`, edits that
+  are not allowed, and unsupported export formats.
+
+Start the backend (and the Decider server if it is enabled), then run it from Postman, or from the
+terminal with [newman](https://www.npmjs.com/package/newman):
+
+```bash
+uv run meet-mind
+npx newman run postman/MeetMind.postman_collection.json -e postman/local.postman_environment.json
+```
+
+The main flow calls Amazon Bedrock, so it needs valid AWS credentials and takes a few seconds.
+The tests check structure and invariants (evidence present, unknown values left empty, edits
+persisted) and never exact generated text, because model output varies between runs.
+
 ## Design Principles
 
 - **Evidence-based extraction:** Tasks, assignees, deadlines, and decisions should be supported by the meeting transcript.
