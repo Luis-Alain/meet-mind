@@ -1,7 +1,9 @@
 from datetime import date
 from typing import Self
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from meet_mind.models.common import FieldStatus, Priority, Provenance, ReviewStatus
 
@@ -23,6 +25,9 @@ class Task(BaseModel):
     (for example a relative date such as "on Friday").
     """
 
+    # Assigned by us, not by the model: it is left out of the JSON schema the LLM has to fill,
+    # so the model can neither see nor invent identifiers.
+    id: SkipJsonSchema[UUID] = Field(default_factory=uuid4)
     title: str = Field(min_length=1)
     description: str | None = None
     assignee: str | None = None

@@ -1,8 +1,15 @@
 """Processing pipeline for one meeting.
 
-The LLM extracts candidate items first. Decider is then consulted from explicit points in this
-Python code (the LLM has no way to call it), so its contribution stays measurable: each task
-gets its own ``DeciderOutcome`` that can be compared with reference labels afterwards.
+Processing happens in three steps, always in this order:
+
+1. The LLM extracts candidate items from the transcript.
+2. Deterministic rules verify the candidates against the transcript (quotes, assignees, dates).
+3. Decider, if enabled, gives a second opinion on each task. It is consulted from explicit points
+   in this Python code (the LLM has no way to call it), so its contribution stays measurable:
+   each task gets its own ``DeciderOutcome`` that can be compared with reference labels later.
+
+Steps 2 and 3 only ever flag items for review or remove unverifiable claims; they never write
+new content.
 """
 
 from dataclasses import dataclass, field
@@ -11,11 +18,13 @@ from meet_mind.models.meeting import Meeting
 from meet_mind.models.task import Task
 from meet_mind.services.decider import CLEAR_NO, DeciderClient, DeciderOutcome
 from meet_mind.services.extraction import AgentFactory, ExtractionOutcome, extract_meeting
+from meet_mind.services.validation import ValidationReport, validate_result
 
 
 @dataclass
 class ProcessingOutcome:
     extraction: ExtractionOutcome
+    validation: ValidationReport = field(default_factory=ValidationReport)
     # One entry per task, in the same order as ``extraction.result.tasks``.
     # ``None`` means Decider was not consulted for that task.
     decider_outcomes: list[DeciderOutcome | None] = field(default_factory=list)
@@ -59,7 +68,11 @@ def process_meeting(
 ) -> ProcessingOutcome:
     """Extract items from the meeting and, if a Decider client is given, double-check the tasks."""
     extraction = extract_meeting(meeting, agent_factory)
-    outcome = ProcessingOutcome(extraction=extraction, decider_used=decider is not None)
+    # Validate before consulting Decider so it only judges evidence that survived the checks.
+    extraction.result, validation = validate_result(extraction.result, meeting)
+    outcome = ProcessingOutcome(
+        extraction=extraction, validation=validation, decider_used=decider is not None
+    )
     if decider is None:
         outcome.decider_outcomes = [None] * len(extraction.result.tasks)
         return outcome
