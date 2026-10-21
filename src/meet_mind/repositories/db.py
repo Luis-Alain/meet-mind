@@ -21,6 +21,7 @@ from sqlalchemy import (
     Text,
     create_engine,
     event,
+    text,
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -162,6 +163,15 @@ class Database:
 
     def create_all(self) -> None:
         Base.metadata.create_all(self.engine)
+
+    def ping(self) -> bool:
+        """True when the database answers a trivial query; used by the readiness check."""
+        try:
+            with self.engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+            return True
+        except Exception:
+            return False
 
     def dispose(self) -> None:
         self.engine.dispose()

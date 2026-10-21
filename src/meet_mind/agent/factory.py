@@ -9,10 +9,14 @@ from meet_mind.config import Settings
 AgentFactory = Callable[[], Agent]
 
 
+class ModelNotConfiguredError(RuntimeError):
+    """Raised when no Bedrock model id is set, so the API can answer 503 instead of 500."""
+
+
 def build_extraction_agent(settings: Settings) -> Agent:
     """Create a fresh, stateless extraction agent (no tools: the LLM can execute nothing)."""
     if not settings.aws_bedrock_model_id:
-        raise RuntimeError("AWS_BEDROCK_MODEL_ID is not configured")
+        raise ModelNotConfiguredError("AWS_BEDROCK_MODEL_ID is not configured")
     # Temperature 0 keeps extraction as repeatable as the model allows.
     model = BedrockModel(
         model_id=settings.aws_bedrock_model_id,

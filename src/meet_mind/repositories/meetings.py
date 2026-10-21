@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from meet_mind.models.common import FieldStatus, MeetingStatus, Provenance, ReviewStatus
 from meet_mind.models.meeting import Meeting, TranscriptSegment
@@ -147,6 +147,35 @@ class MeetingRepository:
                     for s in segments
                 ],
             )
+
+    def claim_for_processing(self, meeting_id: UUID, force: bool = False) -> str:
+        """Atomically move a meeting to ``processing`` so only one request can run it.
+
+        The check and the change happen in a single UPDATE, so two simultaneous requests cannot
+        both pass the check. Returns ``"claimed"``, ``"busy"`` (already running), ``"done"``
+        (already processed and ``force`` is off) or ``"missing"``.
+        """
+        key = str(meeting_id)
+        allowed = [MeetingStatus.CREATED.value, MeetingStatus.FAILED.value]
+        if force:
+            allowed.append(MeetingStatus.COMPLETED.value)
+        with self._db.session() as session:
+            claimed = session.execute(
+                update(MeetingRow)
+                .where(MeetingRow.id == key, MeetingRow.status.in_(allowed))
+                .values(status=MeetingStatus.PROCESSING.value)
+            ).rowcount
+            if claimed:
+                return "claimed"
+            row = session.get(MeetingRow, key)
+            if row is None:
+                return "missing"
+            return "busy" if row.status == MeetingStatus.PROCESSING.value else "done"
+
+    def get_summary(self, meeting_id: UUID) -> str:
+        with self._db.session() as session:
+            row = session.get(MeetingRow, str(meeting_id))
+            return row.summary if row else ""
 
     def set_status(self, meeting_id: UUID, status: MeetingStatus) -> None:
         with self._db.session() as session:
