@@ -102,7 +102,7 @@ class DeciderClient:
     def __init__(
         self,
         base_url: str,
-        confidence_threshold: float = 0.85,
+        confidence_threshold: float = 0.6,
         timeout: float = 10.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:

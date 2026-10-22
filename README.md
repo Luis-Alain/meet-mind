@@ -52,7 +52,7 @@ flowchart TD
     subgraph RULES ["Deterministic validation (no model)"]
         I --> J["Quote must appear in the cited segments"]
         J --> K["Assignee must be named in the quote<br/>or be the speaker"]
-        K --> L["Date status comes from the spoken phrase<br/>weekday and meeting date are cross-checked"]
+        K --> L["Relative dates (tomorrow, a weekday) are recomputed from the<br/>spoken phrase, then checked against the meeting date"]
     end
 
     L --> M{"Decider<br/>enabled?"}
@@ -200,7 +200,7 @@ apostrophe so spreadsheets show it as text instead of running it as a formula; t
 follows the apostrophe.
 
 The format is neutral and not tied to any tool. Importing into Asana, Trello or Jira requires a
-mapping of these columns to each tool's fields, which is not included yet.
+mapping of these columns to each tool's fields, which MeetMind does not provide.
 
 ## Configuration
 
@@ -247,6 +247,38 @@ npx newman run postman/MeetMind.postman_collection.json -e postman/local.postman
 The main flow calls Amazon Bedrock, so it needs valid AWS credentials and takes a few seconds.
 The tests check structure and invariants (evidence present, unknown values left empty, edits
 persisted) and never exact generated text, because model output varies between runs.
+
+### Evaluating quality
+
+`evals/` measures how good the extraction is and whether Decider helps, using the
+[Strands Evals SDK](https://strandsagents.com/docs/user-guide/evals-sdk/quickstart/) to define
+cases, evaluators and per-case reports. Every judgement is a comparison with a human label, so no
+language model is used as a judge.
+
+```bash
+# Extraction quality, with and without Decider (calls Bedrock; needs the Decider server)
+uv run python -m evals.run_pipeline_eval --split dev --allow-draft
+
+# Decider on its own, sentence by sentence (free and fast; needs the Decider server)
+uv run python -m evals.run_decider_eval --split dev --allow-draft
+```
+
+Each run writes `summary.md`, `metrics.json`, the SDK reports and the raw predictions to
+`evals/reports/<timestamp>-<kind>/` (git-ignored), together with the models, parameters, dataset
+hashes, package versions and git commit that produced them.
+
+- **Labels** live in `evals/datasets/`; read `LABELING_GUIDE.md` before editing them. Rows have a
+  status: `template` (empty), `draft` (unverified) or `reviewed` (verified by a person). Only
+  `reviewed` rows count unless `--allow-draft` is passed, and templates are never used.
+- **Dev and test splits** are separate files. Tune prompts, rules and thresholds on `dev`; use
+  `test` only to report results.
+- **With vs. without Decider** is measured on the same extraction (the model runs once per meeting),
+  because Decider only adds review flags after extraction and validation.
+- **Metrics:** task precision, recall and F1; assignee and due-date accuracy on the tasks found;
+  how many "not a task" traps the system fell for; how many quotes cannot be found in the transcript;
+  how well the review flag points at wrong tasks (including *silent errors*, wrong tasks with no
+  flag); and for Decider, accuracy, macro F1, confusion matrix, calibration (ECE, Brier), latency
+  percentiles and a coverage-versus-accuracy table for choosing the confidence threshold.
 
 ## Design Principles
 

@@ -61,6 +61,36 @@ def apply_decider_review(task: Task, outcome: DeciderOutcome) -> Task:
     )
 
 
+def review_with_decider(
+    tasks: list[Task], decider: DeciderClient
+) -> tuple[list[Task], list[DeciderOutcome | None], bool]:
+    """Ask Decider about every task and return the reviewed tasks.
+
+    Returns ``(tasks, outcomes, available)``. ``outcomes`` lines up with ``tasks`` (``None`` where
+    Decider was not consulted) and ``available`` is False when the server stopped answering.
+    Kept apart from ``process_meeting`` so the same extraction can be reviewed with and without
+    Decider, which is how its contribution is measured.
+    """
+    reviewed: list[Task] = []
+    outcomes: list[DeciderOutcome | None] = []
+    available = True
+    for task in tasks:
+        if not available:
+            # The server already failed once; do not wait for a timeout on every task.
+            outcomes.append(None)
+            reviewed.append(task)
+            continue
+        decision = decider.classify_task(task)
+        outcomes.append(decision)
+        if decision.unreachable:
+            # No answer at all is not evidence against the task, so it is left untouched.
+            available = False
+            reviewed.append(task)
+        else:
+            reviewed.append(apply_decider_review(task, decision))
+    return reviewed, outcomes, available
+
+
 def process_meeting(
     meeting: Meeting,
     agent_factory: AgentFactory,
@@ -77,21 +107,8 @@ def process_meeting(
         outcome.decider_outcomes = [None] * len(extraction.result.tasks)
         return outcome
 
-    reviewed: list[Task] = []
-    for task in extraction.result.tasks:
-        if not outcome.decider_available:
-            # The server already failed once; do not wait for a timeout on every task.
-            outcome.decider_outcomes.append(None)
-            reviewed.append(task)
-            continue
-        decision = decider.classify_task(task)
-        outcome.decider_outcomes.append(decision)
-        if decision.unreachable:
-            # No answer at all is not evidence against the task, so it is left untouched.
-            outcome.decider_available = False
-            reviewed.append(task)
-        else:
-            reviewed.append(apply_decider_review(task, decision))
-
+    reviewed, outcomes, available = review_with_decider(extraction.result.tasks, decider)
+    outcome.decider_outcomes = outcomes
+    outcome.decider_available = available
     extraction.result = extraction.result.model_copy(update={"tasks": reviewed})
     return outcome

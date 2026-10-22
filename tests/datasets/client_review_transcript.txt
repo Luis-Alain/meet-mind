@@ -1,0 +1,26 @@
+GOOGLE MEET TRANSCRIPT
+Meeting: Acme Corp Client Feedback Review
+Date: October 21, 2026
+Participants: Mark, Chloe, Sam
+
+[00:00:12] Mark: Hi team. I just got off the phone with the Acme Corp stakeholders. They reviewed the staging environment and had a few comments. 
+
+[00:00:22] Chloe: Oh boy. How bad is it?
+
+[00:00:25] Mark: Actually, mostly positive! But they did mention that the data export is taking too long. They said, "It feels like we are waiting forever to download the PDF." 
+
+[00:00:38] Chloe: Yeah, I knew that was going to be an issue. The SQL query for that report is scanning the entire table. I can optimize that.
+
+[00:00:48] Mark: Awesome. Chloe, please optimize the PDF export query. Try to get that done before the end of the week so I can update them on Friday.
+
+[00:00:58] Chloe: Will do. End of week is totally doable.
+
+[00:01:02] Mark: They also mentioned the logo on the mobile view looks squished. Sam, they literally asked if we could "make the logo bigger and pop more". 
+
+[00:01:15] Sam: Classic client request. Yeah, the flex container is probably ignoring the aspect ratio on smaller screens. I can fix the CSS.
+
+[00:01:25] Mark: Perfect. Sam, can you fix the mobile logo aspect ratio today? It should be a quick win.
+
+[00:01:32] Sam: Yeah, I'll push a fix in an hour.
+
+[00:01:36] Mark: That's everything. Thanks for the quick turnaround, guys!

@@ -5,7 +5,7 @@ def test_defaults(monkeypatch):
     monkeypatch.delenv("AWS_REGION", raising=False)
     settings = Settings(_env_file=None)
     assert settings.aws_region == "us-east-1"
-    assert settings.decider_confidence_threshold == 0.85
+    assert settings.decider_confidence_threshold == 0.6
     assert settings.max_transcript_chars == 100_000
 
 

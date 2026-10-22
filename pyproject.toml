@@ -32,6 +32,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.17.1",
+    "strands-agents-evals>=1.7.0",
 ]
 
 [tool.ruff]
@@ -47,6 +48,8 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# ``evals`` lives at the repository root, next to ``tests``, rather than inside the package.
+pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = "-m 'not bedrock and not decider'"
 markers = [

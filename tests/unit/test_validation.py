@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from meet_mind.models.common import FieldStatus
 from meet_mind.models.meeting import Meeting
 from meet_mind.models.task import Decision, Evidence, ExtractionResult, Task
@@ -107,15 +109,91 @@ def test_explicit_date_status_is_derived_from_phrase():
     assert _validate_one(task).due_date_status == FieldStatus.EXPLICIT
 
 
-def test_wrong_weekday_is_flagged():
+def test_wrong_weekday_is_corrected_from_the_phrase():
     task = _task(
-        due_date=date(2026, 10, 22),  # a Thursday
+        due_date=date(2026, 10, 22),  # a Thursday, but the phrase says Friday
         due_date_raw="el viernes",
         due_date_status=FieldStatus.INFERRED,
     )
-    checked = _validate_one(task)
-    assert checked.needs_review
+    result, report = validate_result(ExtractionResult(tasks=[task]), _meeting())
+    assert result.tasks[0].due_date == date(2026, 10, 23)
+    assert not result.tasks[0].needs_review and report.dates_corrected == 1
+
+
+def test_weekday_mismatch_is_flagged_when_it_cannot_be_recomputed():
+    # Without the meeting date a relative phrase cannot be resolved, only cross-checked.
+    task = _task(
+        due_date=date(2026, 10, 22),
+        due_date_raw="el viernes",
+        due_date_status=FieldStatus.INFERRED,
+    )
+    checked = _validate_one(task, _meeting(meeting_date=None))
     assert any("weekday" in r for r in checked.review_reasons)
+
+
+def test_missing_date_is_filled_from_a_resolvable_phrase_but_not_from_a_vague_one():
+    # A phrase that is not in the cited evidence still gets its date, but the task is flagged.
+    unsupported = _task(
+        due_date_raw="mañana", evidence=[Evidence(quote="mañana", segment_ids=["s0002"])]
+    )
+    checked = _validate_one(unsupported)
+    assert checked.due_date == date(2026, 10, 20) and checked.needs_review
+    spoken = _task(
+        due_date_raw="el viernes",
+        evidence=[Evidence(quote="la tengo lista el viernes", segment_ids=["s0002"])],
+    )
+    filled = _validate_one(spoken)
+    assert filled.due_date == date(2026, 10, 23) and filled.due_date_status == FieldStatus.INFERRED
+    vague = _task(due_date_raw="esta tarde")
+    assert _validate_one(vague).due_date is None
+
+
+def test_before_weekday_is_flagged_as_ambiguous_unless_a_time_is_given():
+    plain = _task(
+        due_date=date(2026, 10, 23),
+        due_date_raw="antes del viernes",
+        due_date_status=FieldStatus.INFERRED,
+        evidence=[Evidence(quote="antes del viernes", segment_ids=["s0001"])],
+    )
+    meeting = _meeting()
+    meeting.segments[0].text = "Hay que terminarlo antes del viernes"
+    checked = _validate_one(plain, meeting)
+    assert checked.due_date == date(2026, 10, 23)
+    assert any("day before" in r for r in checked.review_reasons)
+
+    timed = plain.model_copy(update={"due_date_raw": "antes del viernes a las 12:00"})
+    meeting.segments[0].text = "Hay que terminarlo antes del viernes a las 12:00"
+    timed = timed.model_copy(
+        update={
+            "evidence": [Evidence(quote="antes del viernes a las 12:00", segment_ids=["s0001"])]
+        }
+    )
+    assert not any("day before" in r for r in _validate_one(timed, meeting).review_reasons)
+
+
+@pytest.mark.parametrize(
+    ("phrase", "expected"),
+    [
+        ("tomorrow at 9:00 a.m.", date(2026, 10, 22)),
+        ("mañana a las 9", date(2026, 10, 22)),
+        ("pasado mañana", date(2026, 10, 23)),
+        ("day after tomorrow", date(2026, 10, 23)),
+        ("hoy", date(2026, 10, 21)),
+        ("before Thursday at noon", date(2026, 10, 22)),
+        ("before Friday", date(2026, 10, 23)),
+        ("el viernes", date(2026, 10, 23)),
+        ("el miércoles", date(2026, 10, 28)),  # same weekday as the meeting -> following week
+        ("por la mañana", None),  # "morning", not "tomorrow"
+        ("esta tarde", None),
+        ("next Friday", None),
+        ("el viernes que viene", None),
+        ("el lunes o el martes", None),
+    ],
+)
+def test_resolve_relative_date(phrase, expected):
+    from meet_mind.services.validation import resolve_relative_date
+
+    assert resolve_relative_date(phrase, date(2026, 10, 21)) == expected  # a Wednesday
 
 
 def test_date_before_meeting_and_missing_phrase_are_flagged():

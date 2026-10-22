@@ -11,6 +11,7 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from strands.types.exceptions import StructuredOutputException
@@ -176,6 +177,18 @@ def consolidate(results: list[ExtractionResult]) -> ExtractionResult:
     return merged
 
 
+def _describe_date(meeting_date: date | None) -> str:
+    """Render the meeting date with its weekday, e.g. ``2026-10-21 (Wednesday)``.
+
+    Relative expressions such as "before Friday" or "tomorrow" can only be turned into calendar
+    dates if the model knows which weekday the meeting fell on. Left to work it out alone, it
+    miscounted and produced dates on the wrong weekday, so the weekday is given explicitly.
+    """
+    if meeting_date is None:
+        return "unknown"
+    return f"{meeting_date.isoformat()} ({meeting_date:%A})"
+
+
 def _chunk_prompt(meeting: Meeting, chunk: list[TranscriptSegment], position: tuple[int, int]):
     index, total = position
     note = (
@@ -185,7 +198,7 @@ def _chunk_prompt(meeting: Meeting, chunk: list[TranscriptSegment], position: tu
     )
     return CHUNK_PROMPT_TEMPLATE.format(
         title=meeting.title,
-        meeting_date=meeting.meeting_date.isoformat() if meeting.meeting_date else "unknown",
+        meeting_date=_describe_date(meeting.meeting_date),
         participants=", ".join(meeting.participants) or "unknown",
         chunk_note=note,
         transcript="\n".join(format_segment(s) for s in chunk),

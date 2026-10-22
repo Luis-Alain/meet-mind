@@ -1,0 +1,26 @@
+GOOGLE MEET TRANSCRIPT
+Meeting: Q4 Feature Brainstorming - Dark Mode
+Date: October 21, 2026
+Participants: Emma, David, Lisa
+
+[00:00:10] Emma: Hey team. Today we are just bouncing around ideas for the new dark mode feature. Nothing is set in stone yet.
+
+[00:00:20] David: I was thinking we could maybe use a deep navy blue instead of pure black. It's softer on the eyes. And maybe we could add some neon accents for the buttons?
+
+[00:00:35] Lisa: I love the navy idea. Not sure about the neon, it might clash with our brand guidelines. We'd have to see how it looks. Also, I was wondering if we should allow users to schedule dark mode based on their local time.
+
+[00:00:50] Emma: That scheduling idea is great, but probably out of scope for v1. Let's stick to a simple toggle for now. 
+
+[00:01:02] David: Makes sense. So, what are our actual next steps here to get this moving?
+
+[00:01:10] Emma: Good question. David, I need you to create the initial Figma mockups for the dashboard in dark mode. Let's aim to review those by next Tuesday. 
+
+[00:01:22] David: Got it. Figma mockups for the dashboard by Tuesday. 
+
+[00:01:28] Lisa: Do you want me to start looking into the code?
+
+[00:01:32] Emma: Yes. Lisa, please do a technical spike on how we will implement the CSS variables for the theme switching. Just a quick proof of concept by this Friday would be amazing.
+
+[00:01:45] Lisa: Sure thing. Technical spike for CSS variables by Friday. 
+
+[00:01:50] Emma: Great, thanks guys. Have a good afternoon.

@@ -13,7 +13,7 @@ instead of being silently trusted or silently deleted.
 
 import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from meet_mind.models.common import FieldStatus
 from meet_mind.models.meeting import Meeting, TranscriptSegment
@@ -46,6 +46,19 @@ _WEEKDAYS = {
 }  # fmt: skip
 
 
+# "tomorrow" / "mañana". In Spanish "mañana" also means "morning" ("por la mañana"), so it only
+# counts as "tomorrow" when it is not preceded by an article or "esta".
+_TOMORROW = re.compile(r"\btomorrow\b|(?<!la )(?<!esta )(?<!de la )\bma[ñn]ana\b")
+_DAY_AFTER_TOMORROW = re.compile(r"day after tomorrow|pasado ma[ñn]ana")
+_TODAY = re.compile(r"\btoday\b|\bhoy\b")
+# "next Friday" / "el viernes que viene" is ambiguous (this week's or the following one), so no
+# date is computed for it.
+_NEXT_WEEK_PHRASE = re.compile(r"\bnext\b|\bpr[óo]xim[oa]\b|que viene|siguiente")
+# "before Friday" can mean Friday itself or the day before, unless a time of day pins it down.
+_BEFORE = re.compile(r"\bbefore\b|\bantes\b")
+_TIME_OF_DAY = re.compile(r"\d{1,2}:\d{2}|\d\s*[ap]\.?m|noon|mediod[íi]a|medianoche|midnight")
+
+
 @dataclass
 class ValidationReport:
     """Counters describing what the rules changed, kept for logging and evaluation."""
@@ -54,6 +67,8 @@ class ValidationReport:
     unverified_quotes: int = 0
     assignees_cleared: int = 0
     dates_flagged: int = 0
+    # Dates the model got wrong (or left empty) that were recomputed from the spoken phrase.
+    dates_corrected: int = 0
 
 
 def normalize(text: str) -> str:
@@ -108,6 +123,50 @@ def _add_reason(task: Task, reasons: list[str], reason: str) -> None:
         reasons.append(reason)
 
 
+def resolve_relative_date(raw: str, meeting_date: date) -> date | None:
+    """Turn a relative phrase into a calendar date, or None when it cannot be done reliably.
+
+    Language models are poor at calendar arithmetic (they placed "before Thursday" on a Friday),
+    while this is exact. Supported: today, tomorrow, the day after tomorrow, and a single weekday
+    name, which means its next occurrence after the meeting. Anything else is left unresolved.
+    """
+    text = raw.casefold()
+    if _NEXT_WEEK_PHRASE.search(text):
+        return None
+    if _DAY_AFTER_TOMORROW.search(text):
+        return meeting_date + timedelta(days=2)
+    if _TOMORROW.search(text):
+        return meeting_date + timedelta(days=1)
+    if _TODAY.search(text):
+        return meeting_date
+
+    weekdays = {n for word, n in _WEEKDAYS.items() if re.search(rf"\b{word}\b", text)}
+    if len(weekdays) != 1:
+        return None
+    # Between 1 and 7 days ahead: a weekday said on that same weekday means the following week.
+    days_ahead = (weekdays.pop() - meeting_date.weekday() - 1) % 7 + 1
+    return meeting_date + timedelta(days=days_ahead)
+
+
+def _recompute_relative_date(
+    task: Task, meeting_date: date | None, report: ValidationReport, reasons: list[str]
+) -> Task:
+    """Replace the model's date with the one computed from the phrase, when they disagree."""
+    raw = (task.due_date_raw or "").strip()
+    if not raw or meeting_date is None or _EXPLICIT_DATE.search(raw.casefold()):
+        return task
+    resolved = resolve_relative_date(raw, meeting_date)
+    if resolved is None:
+        return task
+
+    if _BEFORE.search(raw.casefold()) and not _TIME_OF_DAY.search(raw.casefold()):
+        reasons.append(f"'{raw}' may mean the named day or the day before it; used the named day")
+    if resolved == task.due_date:
+        return task
+    report.dates_corrected += 1
+    return task.model_copy(update={"due_date": resolved, "due_date_status": FieldStatus.INFERRED})
+
+
 def _check_dates(
     task: Task, meeting_date: date | None, evidence_text: str, reasons: list[str]
 ) -> Task:
@@ -148,6 +207,8 @@ def validate_task(
     """Apply every rule to one task. The task is flagged or corrected, never deleted."""
     reasons: list[str] = []
     update: dict = {}
+
+    task = _recompute_relative_date(task, meeting.meeting_date, report, reasons)
 
     unverified = sum(not quote_is_verified(e, segments) for e in task.evidence)
     if unverified:

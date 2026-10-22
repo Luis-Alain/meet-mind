@@ -1,0 +1,24 @@
+GOOGLE MEET TRANSCRIPT
+Meeting: URGENT: Production Outage Sync
+Date: October 21, 2026
+Participants: Alex, Sarah, John
+
+[00:00:05] Alex: Okay, is everyone here? The main database is locked up and user logins are failing. 
+
+[00:00:12] Sarah: I'm here. I checked the Datadog dashboard and we are seeing a massive spike in connections from the new notification microservice we deployed an hour ago.
+
+[00:00:25] John: Yeah, customer support is already getting tickets. What's the plan?
+
+[00:00:30] Alex: First, I need to kill the hanging connections. Sarah, I need you to immediately revert the pull request for the notification service and redeploy the previous stable version. Can you do that right now?
+
+[00:00:45] Sarah: On it. Reverting PR #450 now. The pipeline usually takes about 4 minutes.
+
+[00:00:52] Alex: Good. While you do that, I'm going to scale up the read replicas just to give us some breathing room. 
+
+[00:01:05] John: Once the rollback is complete, do you want me to run the critical path automation suite on production?
+
+[00:01:12] Alex: Yes, please. John, run the tier-1 regression tests as soon as Sarah confirms the rollback is live. Let us know the results in the incident Slack channel.
+
+[00:01:25] Sarah: Rollback is merged. Deploying to prod now. I will monitor the pod health.
+
+[00:01:32] Alex: Alright, let's jump off the call and move updates to Slack. Thanks everyone.

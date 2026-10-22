@@ -16,8 +16,10 @@ class Settings(BaseSettings):
     # A cold server (model weights not yet in memory) can take several seconds to answer once.
     decider_timeout_seconds: float = Field(default=30.0, gt=0)
     decider_model_id: str = "StrandsAgents/strands-decider-2B-qwen3.5-v1-2610"
-    # Experimental: calibrate with evals, not a guarantee of correctness.
-    decider_confidence_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    # Below this confidence the statement type is not trusted and the task goes to review.
+    # A higher value sends more tasks to a person; a lower one trusts Decider more often.
+    # `python -m evals.run_decider_eval` prints the coverage/accuracy trade-off for each value.
+    decider_confidence_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
 
     database_url: str = "sqlite:///./meetmind.db"
     max_transcript_chars: int = Field(default=100_000, gt=0)

@@ -112,3 +112,19 @@ def test_task_validator_rejects_inconsistent_unknowns():
             assignee_status=FieldStatus.UNKNOWN,
             evidence=[Evidence(quote="q", segment_ids=["s0001"])],
         )
+
+
+def test_prompt_gives_the_meeting_date_with_its_weekday():
+    from datetime import date
+
+    meeting = _meeting("Ana: hola")
+    meeting.meeting_date = date(2026, 10, 21)
+    agent = FakeAgent([ExtractionResult()])
+    extract_meeting(meeting, lambda: agent)
+    assert "Meeting date: 2026-10-21 (Wednesday)" in agent.prompts[0]
+
+
+def test_prompt_says_unknown_when_there_is_no_meeting_date():
+    agent = FakeAgent([ExtractionResult()])
+    extract_meeting(_meeting("Ana: hola"), lambda: agent)
+    assert "Meeting date: unknown" in agent.prompts[0]
